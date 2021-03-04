@@ -1,0 +1,23 @@
+{
+  "name": "alexa-youtube-skill",
+  "version": "3.0.5",
+  "description": "Use Alexa to search YouTube for your favorite videos",
+  "engines": {
+    "node": ">=10.16.3"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "alexa-app": "4.2.3",
+    "request": "2.88.0",
+    "ssml-builder": "0.4.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dmhacker/alexa-youtube-skill"
+  },
+  "keywords": [
+    "alexa",
+    "youtube"
+  ],
+  "license": "MIT"
+}
