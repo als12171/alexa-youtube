@@ -2,39 +2,58 @@
     "interactionModel": {
         "languageModel": {
             "invocationName": "hello world",
-            "intents": [
-                {
+            "intents": [{
                     "name": "AMAZON.CancelIntent",
                     "samples": []
-                },
-                {
+                }, {
                     "name": "AMAZON.HelpIntent",
                     "samples": []
-                },
-                {
+                }, {
                     "name": "AMAZON.StopIntent",
                     "samples": []
-                },
-                {
-                    "name": "HelloWorldIntent",
-                    "slots": [],
+                }, {
+                    "name": "GetVideoIntent",
+                    "slots": [{
+                            "name": "videoQuery",
+                            "type": "VIDEOS"
+                        }
+                    ],
                     "samples": [
-                        "hello",
-                        "how are you",
-                        "say hi world",
-                        "say hi",
-                        "hi",
-                        "say hello world",
-                        "say hello"
+                        "search for {videoQuery}",
+                        "find {videoQuery}",
+                        "play {videoQuery}",
+                        "start playing {videoQuery}",
+                        "put on {videoQuery}"
                     ]
-                },
-                {
+                }, {
                     "name": "AMAZON.NavigateHomeIntent",
+                    "samples": []
+                }, {
+                    "name": "AMAZON.PauseIntent",
+                    "slots": [],
+                    "samples": []
+                }, {
+                    "name": "AMAZON.ResumeIntent",
+                    "slots": [],
                     "samples": []
                 }
             ],
-            "types": []
+            "types": [{
+                    "name": "GetVideoIntent",
+                    "slots": [{
+                            "name": "videoQuery",
+                            "type": "VIDEOS"
+                        }
+                    ],
+                    "samples": [
+                        "search for {videoQuery}",
+                        "find {videoQuery}",
+                        "play {videoQuery}",
+                        "start playing {videoQuery}",
+                        "put on {videoQuery}"
+                    ]
+                }
+            ]
         }
     }
-  }
-  
+}

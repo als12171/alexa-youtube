@@ -1,59 +1,63 @@
 // This sample demonstrates handling intents from an Alexa skill using the Alexa Skills Kit SDK (v2).
 // Please visit https://alexa.design/cookbook for additional examples on implementing slots, dialog management,
 // session persistence, api calls, and more.
-const Alexa = require('ask-sdk-core');
+const Alexa = require('ask-sdk');
+const ytlist = require("yt-list");
+const ytdl = require("ytdl-core");
 
 const LaunchRequestHandler = {
     canHandle(handlerInput) {
-        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'LaunchRequest';
+        return (Alexa.getRequestType(handlerInput.requestEnvelope) === "LaunchRequest");
     },
     handle(handlerInput) {
-        const speakOutput = 'Welcome, you can say Hello or Help. Which would you like to try?';
+        console.log("LaunchRequestHandler");
+        const message = "Welcome to Hey Tube. ask to play a video to start listening.";
+        const reprompt = "You can say, play the Whitesnake, to begin.";
         return handlerInput.responseBuilder
-            .speak(speakOutput)
-            .reprompt(speakOutput)
-            .getResponse();
-    }
-};
-const HelloWorldIntentHandler = {
-    canHandle(handlerInput) {
-        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'HelloWorldIntent';
+        .speak(message)
+        .reprompt(reprompt)
+        .getResponse();
     },
-    handle(handlerInput) {
-        const speakOutput = 'Hello World!';
-        return handlerInput.responseBuilder
-            .speak(speakOutput)
-            //.reprompt('add a reprompt if you want to keep the session open for the user to respond')
-            .getResponse();
-    }
 };
 const HelpIntentHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.HelpIntent';
+         && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.HelpIntent';
     },
     handle(handlerInput) {
         const speakOutput = 'You can say hello to me! How can I help?';
 
         return handlerInput.responseBuilder
-            .speak(speakOutput)
-            .reprompt(speakOutput)
-            .getResponse();
+        .speak(speakOutput)
+        .reprompt(speakOutput)
+        .getResponse();
     }
 };
 const CancelAndStopIntentHandler = {
     canHandle(handlerInput) {
-        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-            && (Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.CancelIntent'
-                || Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.StopIntent');
+        return (Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" && (Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.CancelIntent" || Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.StopIntent" || Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.PauseIntent"));
     },
     handle(handlerInput) {
-        const speakOutput = 'Goodbye!';
-        return handlerInput.responseBuilder
-            .speak(speakOutput)
+        console.log("CancelAndStopIntentHandler");
+        return controller.stop(handlerInput, "Goodbye!");
+    },
+};
+const GetVideoIntentHandler = {
+    async canHandle(handlerInput) {
+        return (Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+            Alexa.getIntentName(handlerInput.requestEnvelope) === "GetVideoIntent");
+    },
+    handle(handlerInput) {
+        console.log("GetVideo");
+        const speechText = handlerInput.requestEnvelope.request.intent.slots.videoQuery.value;
+        if (speechText) {
+            return controller.search(handlerInput, speechText);
+        } else {
+            return handlerInput.responseBuilder
+            .speak("You can say, play a youtube video, to begin.")
             .getResponse();
-    }
+        }
+    },
 };
 const SessionEndedRequestHandler = {
     canHandle(handlerInput) {
@@ -78,9 +82,9 @@ const IntentReflectorHandler = {
         const speakOutput = `You just triggered ${intentName}`;
 
         return handlerInput.responseBuilder
-            .speak(speakOutput)
-            //.reprompt('add a reprompt if you want to keep the session open for the user to respond')
-            .getResponse();
+        .speak(speakOutput)
+        //.reprompt('add a reprompt if you want to keep the session open for the user to respond')
+        .getResponse();
     }
 };
 
@@ -96,10 +100,61 @@ const ErrorHandler = {
         const speakOutput = `Sorry, I had trouble doing what you asked. Please try again.`;
 
         return handlerInput.responseBuilder
-            .speak(speakOutput)
-            .reprompt(speakOutput)
-            .getResponse();
+        .speak(speakOutput)
+        .reprompt(speakOutput)
+        .getResponse();
     }
+};
+
+/* PROCESS ENVIRONMENT VARIABLES */
+
+const HEROKU = process.env.HEROKU_APP_URL || "https://als12171-youtube.herokuapp.com";
+const INTERACTIVE_WAIT = !(process.env.DISABLE_INTERACTIVE_WAIT === "true" || process.env.DISABLE_INTERACTIVE_WAIT === true || process.env.DISABLE_INTERACTIVE_WAIT === 1);
+const CACHE_POLLING_INTERVAL = Math.max(1000, parseInt(process.env.CACHE_POLLING_INTERVAL || "5000", 10));
+const ASK_INTERVAL = Math.max(30000, parseInt(process.env.ASK_INTERVAL || "45000", 10));
+
+/* HELPER FUNCTIONS */
+
+const controller = {
+    async search(handlerInput, query) {
+        //TODO: change this to use the proxy
+        console.log(query);
+        const data = await searchForVideos(query);
+        return this.play(handlerInput, data.items[0]);
+    },
+    async play(handlerInput, audioInfo) {
+        //TODO: change this to use the proxy
+        const {
+            responseBuilder
+        } = handlerInput;
+        const playBehavior = "REPLACE_ALL";
+        console.log("play");
+        console.log(audioInfo);
+        const audioFormat = await getAudioUrl(audioInfo.id.videoId);
+        responseBuilder
+        .speak(`Playing  ${audioInfo.title}`)
+        .withShouldEndSession(true)
+        .addAudioPlayerPlayDirective(playBehavior, audioFormat.url, audioInfo.id, 0, null);
+        return responseBuilder.getResponse();
+    },
+    async stop(handlerInput, message) {
+        return handlerInput.responseBuilder
+        .speak(message)
+        .addAudioPlayerStopDirective()
+        .getResponse();
+    },
+};
+
+const searchForVideos = async(searchQuery, nextPageToken, amount) => {
+    return await ytlist.searchVideos(searchQuery, nextPageToken, amount);
+}
+
+const getAudioUrl = async(videoId) => {
+    const audioInfo = await ytdl.getInfo(videoId, {});
+    const audioFormat = await ytdl.chooseFormat(audioInfo.formats, {
+        quality: "140",
+    });
+    return audioFormat;
 };
 
 // The SkillBuilder acts as the entry point for your skill, routing all request and response
@@ -108,13 +163,12 @@ const ErrorHandler = {
 exports.handler = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
-        HelloWorldIntentHandler,
+        GetVideoIntentHandler,
+        SystemExceptionHandler,
         HelpIntentHandler,
         CancelAndStopIntentHandler,
         SessionEndedRequestHandler,
-        IntentReflectorHandler, // make sure IntentReflectorHandler is last so it doesn't override your custom intent handlers
-        ) 
-    .addErrorHandlers(
-        ErrorHandler,
-        )
+        IntentReflectorHandler // make sure IntentReflectorHandler is last so it doesn't override your custom intent handlers
+    )
+    .addErrorHandlers(ErrorHandler)
     .lambda();

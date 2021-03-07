@@ -1,26 +1,37 @@
 {
-  "manifest": {
-    "publishingInformation": {
-      "locales": {
-        "en-US": {
-          "summary": "Sample Short Description",
-          "examplePhrases": [
-            "Alexa open hello world",
-            "hello",
-            "help"
-          ],
-          "name": "alexa-skill-youtube",
-          "description": "Sample Full Description"
-        }
-      },
-      "isAvailableWorldwide": true,
-      "testingInstructions": "Sample Testing Instructions.",
-      "category": "KNOWLEDGE_AND_TRIVIA",
-      "distributionCountries": []
-    },
-    "apis": {
-      "custom": {}
-    },
-    "manifestVersion": "1.0"
-  }
+    "manifest": {
+        "publishingInformation": {
+            "locales": {
+                "en-US": {
+                    "summary": "Sample You Tube Skill",
+                    "examplePhrases": [
+                        "Alexa open you tube"
+                    ],
+                    "keywords": [
+                        "audio",
+                        "streaming",
+                        "youtube"
+                    ]
+                    "name": "You Tube",
+                    "description": "Sample Full Description"
+                }
+            },
+            "isAvailableWorldwide": true,
+            "testingInstructions": "Alexa Skill to listen to youtube audio",
+            "category": "STREAMING_SERVICE",
+            "distributionCountries": []
+        },
+        "apis": {
+            "custom": {
+                "interfaces": [{
+                        "type": "AUDIO_PLAYER"
+                    }
+                ],
+                "endpoint": {
+                    "uri": "arn:aws:lambda:eu-west-1:577716070213:function:ask-youtube-default-default-1595666765538"
+                }
+            }
+        },
+        "manifestVersion": "1.0"
+    }
 }

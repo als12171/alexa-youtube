@@ -14,7 +14,7 @@
         "userConfig": {
           "runtime": "nodejs10.x",
           "handler": "index.handler",
-          "awsRegion": "us-east-1"
+          "awsRegion": "eu-west-1"
         },
         "type": "@ask-cli/lambda-deployer"
       }
