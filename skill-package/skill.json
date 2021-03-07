@@ -3,23 +3,23 @@
         "publishingInformation": {
             "locales": {
                 "en-US": {
-                    "summary": "Sample You Tube Skill",
+                    "summary": "Listen to a single track audio from YouTube",
                     "examplePhrases": [
-                        "Alexa open you tube"
+                        "Alexa open single tube"
                     ],
                     "keywords": [
                         "audio",
                         "streaming",
                         "youtube"
-                    ]
-                    "name": "You Tube",
-                    "description": "Sample Full Description"
+                    ],
+                    "name": "Single Tube",
+                    "description": "Alexa Skill to listen to a single track audio from YouTube",
                     "smallIconUri": "https://alexademo.ninja/skills/logo-108.png",
                     "largeIconUri": "https://alexademo.ninja/skills/logo-512.png"
                 }
             },
             "isAvailableWorldwide": true,
-            "testingInstructions": "Alexa Skill to listen to youtube audio",
+            "testingInstructions": "Sample Testing Instructions.",
             "category": "STREAMING_SERVICE",
             "distributionCountries": []
         },
