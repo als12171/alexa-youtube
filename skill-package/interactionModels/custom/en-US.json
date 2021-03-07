@@ -1,7 +1,7 @@
 {
     "interactionModel": {
         "languageModel": {
-            "invocationName": "hello world",
+            "invocationName": "single tube",
             "intents": [{
                     "name": "AMAZON.CancelIntent",
                     "samples": []
@@ -26,9 +26,6 @@
                         "put on {videoQuery}"
                     ]
                 }, {
-                    "name": "AMAZON.NavigateHomeIntent",
-                    "samples": []
-                }, {
                     "name": "AMAZON.PauseIntent",
                     "slots": [],
                     "samples": []
@@ -39,18 +36,12 @@
                 }
             ],
             "types": [{
-                    "name": "GetVideoIntent",
-                    "slots": [{
-                            "name": "videoQuery",
-                            "type": "VIDEOS"
+                    "name": "VIDEOS",
+                    "values": [{
+                            "name": {
+                                "value": "the rolling stones"
+                            }
                         }
-                    ],
-                    "samples": [
-                        "search for {videoQuery}",
-                        "find {videoQuery}",
-                        "play {videoQuery}",
-                        "start playing {videoQuery}",
-                        "put on {videoQuery}"
                     ]
                 }
             ]

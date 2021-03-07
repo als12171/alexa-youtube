@@ -14,6 +14,8 @@
                     ]
                     "name": "You Tube",
                     "description": "Sample Full Description"
+                    "smallIconUri": "https://alexademo.ninja/skills/logo-108.png",
+                    "largeIconUri": "https://alexademo.ninja/skills/logo-512.png"
                 }
             },
             "isAvailableWorldwide": true,
@@ -26,10 +28,7 @@
                 "interfaces": [{
                         "type": "AUDIO_PLAYER"
                     }
-                ],
-                "endpoint": {
-                    "uri": "arn:aws:lambda:eu-west-1:577716070213:function:ask-youtube-default-default-1595666765538"
-                }
+                ]
             }
         },
         "manifestVersion": "1.0"
