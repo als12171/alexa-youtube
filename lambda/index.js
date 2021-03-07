@@ -12,7 +12,7 @@ const LaunchRequestHandler = {
     handle(handlerInput) {
         console.log("LaunchRequestHandler");
         const message = "Welcome to Hey Tube. ask to play a video to start listening.";
-        const reprompt = "You can say, play the Whitesnake, to begin.";
+        const reprompt = "You can say, play artist name, to begin.";
         return handlerInput.responseBuilder
         .speak(message)
         .reprompt(reprompt)
@@ -35,7 +35,8 @@ const HelpIntentHandler = {
 };
 const CancelAndStopIntentHandler = {
     canHandle(handlerInput) {
-        return (Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" && (Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.CancelIntent" || Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.StopIntent" || Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.PauseIntent"));
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest"
+         && (Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.CancelIntent" || Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.StopIntent" || Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.PauseIntent");
     },
     handle(handlerInput) {
         console.log("CancelAndStopIntentHandler");
@@ -44,8 +45,8 @@ const CancelAndStopIntentHandler = {
 };
 const GetVideoIntentHandler = {
     async canHandle(handlerInput) {
-        return (Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
-            Alexa.getIntentName(handlerInput.requestEnvelope) === "GetVideoIntent");
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest"
+         && Alexa.getIntentName(handlerInput.requestEnvelope) === "GetVideoIntent";
     },
     handle(handlerInput) {
         console.log("GetVideo");
@@ -167,8 +168,8 @@ exports.handler = Alexa.SkillBuilders.custom()
         SystemExceptionHandler,
         HelpIntentHandler,
         CancelAndStopIntentHandler,
-        SessionEndedRequestHandler,
-        IntentReflectorHandler // make sure IntentReflectorHandler is last so it doesn't override your custom intent handlers
+        SessionEndedRequestHandler
+        //,IntentReflectorHandler // make sure IntentReflectorHandler is last so it doesn't override your custom intent handlers
     )
     .addErrorHandlers(ErrorHandler)
     .lambda();
