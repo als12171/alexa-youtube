@@ -1,558 +1,612 @@
-"use strict";
+const Alexa = require("ask-sdk");
+const ytdl = require("ytdl-core");
+const ytlist = require("yt-list");
 
-// Setup Python-esque formatting
-String.prototype.formatUnicorn = String.prototype.formatUnicorn || require("./util/formatting.js");
+const constants = require("./constants");
 
-// Required packages
-let alexa = require("alexa-app");
-let request = require("request");
-let ssml = require("ssml-builder");
-let response_messages = require("./util/responses.js");
-let app_constants = require("./util/constants.js");
+/* INTENT HANDLERS */
 
-// Create Alexa skill application
-let app = new alexa.app("youtube");
-
-// Process environment variables
-const HEROKU = process.env.HEROKU_APP_URL || "https://als12171-youtube.herokuapp.com";
-const INTERACTIVE_WAIT = !(process.env.DISABLE_INTERACTIVE_WAIT === "true" ||
-    process.env.DISABLE_INTERACTIVE_WAIT === true ||
-    process.env.DISABLE_INTERACTIVE_WAIT === 1);
-const CACHE_POLLING_INTERVAL = Math.max(1000, parseInt(process.env.CACHE_POLLING_INTERVAL || "5000", 10));
-const ASK_INTERVAL = Math.max(30000, parseInt(process.env.ASK_INTERVAL || "45000", 10));
-
-// Maps user IDs to recently searched video metadata
-let buffer_search = {};
-
-// Maps user IDs to last played video metadata
-let last_search = {};
-let last_token = {};
-let last_playback = {};
-
-// Indicates song repetition preferences for user IDs
-let repeat_infinitely = new Set();
-let repeat_once = new Set();
-
-// Set of users waiting for downloads to finishes
-let downloading_users = new Set();
-
-/**
- * Generates a random UUID. Used for creating an audio stream token.
- *
- * @return {String} A random globally unique UUID
- */
-function uuidv4() {
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
-        let r = Math.random() * 16 | 0,
-        v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-}
-
-/**
- * Returns whether a user is streaming video or not.
- * By default, if this is true, then the user also has_video() as well.
- *
- * @return {Boolean} The state of the user's audio stream
- */
-function is_streaming_video(user_id) {
-    return last_token.hasOwnProperty(user_id) && last_token[user_id] != null;
-}
-
-/**
- * Returns whether a user has downloaded a video.
- * Doesn't take into account if the user is currently playing it.
- *
- * @return {Boolean} The state of the user's audio reference
- */
-function has_video(user_id) {
-    return last_search.hasOwnProperty(user_id) && last_search[user_id] != null;
-}
-
-/**
- * Restarts the video by injecting the last search URL as a new stream.
- *
- * @param  {Object} res    A response that will be sent to the Alexa device
- * @param  {Number} offset How many milliseconds from the video start to begin at
- */
-function restart_video(req, res, offset) {
-    let user_id = req.userId;
-    last_token[user_id] = uuidv4();
-    res.audioPlayerPlayStream("REPLACE_ALL", {
-        url: last_search[user_id],
-        streamFormat: "AUDIO_MPEG",
-        token: last_token[user_id],
-        offsetInMilliseconds: offset
-    });
-    if (!last_playback.hasOwnProperty(user_id)) {
-        last_playback[user_id] = {};
+const LaunchRequestHandler = {
+  canHandle(handlerInput) {
+    return (
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "LaunchRequest"
+    );
+  },
+  async handle(handlerInput) {
+    console.log("LaunchRequestHandler");
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+    let message =
+      "Welcome to YouTube Player. ask to play a video to start listening.";
+    let reprompt = "You can say, play your favourite artist name, to begin.";
+    if (playbackInfo.hasPreviousPlaybackSession) {
+      playbackInfo.inPlaybackSession = false;
+      message = `You were listening to ${
+        playbackInfo.playOrder[playbackInfo.index].snippet.title
+      }. Would you like to resume?`;
+      reprompt = "You can say yes to resume or no to play from the top.";
     }
-    last_playback[user_id].start = new Date().getTime();
-}
 
-/**
- * Searches for a YouTube video matching the user's query.
- *
- * @param  {Object}  req  A request from an Alexa device
- * @param  {Object}  res  A response that will be sent to the device
- * @param  {String}  lang The language of the query
- * @return {Promise} Execution of the request
- */
-function search_video(req, res, lang) {
-    let user_id = req.userId;
-    let query = req.slot("VideoQuery");
-    console.log(`User ${user_id} entered search query '${query}'.`);
-    return new Promise((resolve, reject) => {
-        let search_url = `${HEROKU}/alexa/v3/search/${Buffer.from(query).toString("base64")}`;
-        if (lang === "de-DE") {
-            search_url += "?language=de";
-        } else if (lang === "fr-FR") {
-            search_url += "?language=fr";
-        } else if (lang === "it-IT") {
-            search_url += "?language=it";
-        }
-        request(search_url, function (err, res, body) {
-            if (err) {
-                reject(err.message);
-            } else {
-                let body_json = JSON.parse(body);
-                if (body_json.state === "error" && body_json.message === "No results found") {
-                    resolve({
-                        message: response_messages["NO_RESULTS_FOUND"].formatUnicorn(query),
-                        metadata: null
-                    });
-                } else {
-                    let metadata = body_json.video;
-                    console.log(`Search result is '${metadata.title} at ${metadata.link}.`);
-                    resolve({
-                        message: response_messages["ASK_TO_PLAY"].formatUnicorn(metadata.title),
-                        metadata: metadata
-                    });
-                }
-            }
-        });
-    }).then(function (content) {
-        let speech = new ssml();
-        speech.say(content.message);
-        res.say(speech.ssml(true));
-        if (content.metadata) {
-            let metadata = content.metadata;
-            res.card({
-                type: "Simple",
-                title: "Search for \"" + query + "\"",
-                content: "Alexa found \"" + metadata.title + "\" at " + metadata.link + "."
-            });
-            buffer_search[user_id] = metadata;
-            downloading_users.delete(user_id);
-            res.reprompt().shouldEndSession(false);
-        }
-        res.send();
-    }).catch(function (reason) {
-        res.fail(reason);
-    });
-}
-
-/**
- * Runs when a video download finishes. Alerts Alexa via the card system
- * and begins playing the audio.
- *
- * @param  {Object} req  A request from an Alexa device
- * @param  {Object} res  A response that will be sent to the device
- */
-function on_download_finish(req, res) {
-    let user_id = req.userId;
-    let speech = new ssml();
-    let title = buffer_search[user_id].title;
-    let message = response_messages["NOW_PLAYING"].formatUnicorn(title);
-    speech.say(message);
-    res.say(speech.ssml(true));
-    console.log(`${title} is now being played.`);
-    restart_video(req, res, 0);
-}
-
-/**
- * Signals to the server that the video corresponding to the
- * given ID should be downloaded.
- *
- * @param  {String}  id       The ID of the video
- * @return {Promise} Execution of the request
- */
-function request_interactive_download(id) {
-    return new Promise((resolve, reject) => {
-        request(`${HEROKU}/alexa/v3/download/${id}`, function (err, res, body) {
-            if (err) {
-                console.error(err.message);
-                reject(err.message);
-            } else {
-                let body_json = JSON.parse(body);
-                let url = HEROKU + body_json.link;
-                console.log(`${url} has started downloading.`);
-                resolve(url);
-            }
-        });
-    });
-}
-
-/**
- * Executes an interactive wait. This means that the Alexa device will
- * continue its normal cache polling routine but will ask the user at
- * a specified interval whether or not to continue the download. Fixes
- * issues with Alexa not being able to be interrupted for long downloads.
- *
- * @param  {Object}  req  A request from an Alexa device
- * @param  {Object}  res  A response that will be sent to the device
- * @return {Promise} Execution of the request
- */
-function wait_on_interactive_download(req, res) {
-    let user_id = req.userId;
-    return ping_on_interactive_download(req, buffer_search[user_id].id, ASK_INTERVAL).then(() => {
-        if (downloading_users.has(user_id)) {
-            let message = response_messages["ASK_TO_CONTINUE"];
-            let speech = new ssml();
-            speech.say(message);
-            res.say(speech.ssml(true));
-            res.reprompt(message).shouldEndSession(false);
-            console.log("User has been asked if they want to continue with download.");
-        } else {
-            on_download_finish(req, res);
-        }
-        return res.send();
-    }).catch(reason => {
-        console.error(reason);
-        return res.fail(reason);
-    });
-}
-
-/**
- * Pings the cache at a normal polling interval until either the specified
- * timeout is reached or the cache finishes downloading the given video.
- *
- * SUBROUTINE for wait_on_interactive_download() method.
- *
- * @param  {Object}  req     A request from an Alexa device
- * @param  {String}  id      The ID of the video
- * @param  {Number}  timeout The remaining time to wait until the user is prompted
- * @return {Promise} Execution of the request
- */
-function ping_on_interactive_download(req, id, timeout) {
-    let user_id = req.userId;
-    return new Promise((resolve, reject) => {
-        request(`${HEROKU}/alexa/v3/cache/${id}`, function (err, res, body) {
-            if (!err) {
-                let body_json = JSON.parse(body);
-                if (body_json.hasOwnProperty('downloaded') && body_json['downloaded'] != null) {
-                    if (body_json.downloaded) {
-                        downloading_users.delete(user_id);
-                        console.log(`${id} has finished downloading.`);
-                        resolve();
-                    } else {
-                        downloading_users.add(user_id);
-                        if (timeout <= 0) {
-                            resolve();
-                            return;
-                        }
-                        let interval = Math.min(CACHE_POLLING_INTERVAL, timeout);
-                        console.log(`Still downloading. Next ping occurs in ${interval} ms.`);
-                        console.log(`User will be prompted in ${timeout} ms.`);
-                        resolve(new Promise((_resolve, _reject) => {
-                                setTimeout(() => {
-                                    _resolve(ping_on_interactive_download(req, id, timeout - CACHE_POLLING_INTERVAL)
-                                        .catch(_reject));
-                                }, interval);
-                            }).catch(reject));
-                    }
-                } else {
-                    console.error(`${id} is not being cached. Did an error occur?`);
-                    reject('Video unavailable.');
-                }
-            } else {
-                console.error(err.message);
-                reject(err.message);
-            }
-        });
-    });
-}
-
-/**
- * Executes a blocking download to fetch the last video the user requested.
- * A blocking download implies that Alexa will simply wait for the video
- * to download until the download either finishes or times out.
- *
- * @param  {Object}  req  A request from an Alexa device
- * @param  {Object}  res  A response that will be sent to the device
- * @return {Promise} Execution of the request
- */
-function request_blocking_download(req, res) {
-    let user_id = req.userId;
-    let id = buffer_search[user_id].id;
-    console.log(`${id} was requested for download.`);
-    return new Promise((resolve, reject) => {
-        request(`${HEROKU}/alexa/v3/download/${id}`, function (err, res, body) {
-            if (err) {
-                reject(err.message);
-            } else {
-                let body_json = JSON.parse(body);
-                last_search[user_id] = HEROKU + body_json.link;
-
-                // NOTE: hack to get Alexa to ignore a bad PlaybackNearlyFinished event
-                repeat_once.add(user_id);
-                repeat_infinitely.delete(user_id);
-
-                console.log(`${id} has started downloading.`);
-                ping_on_blocking_download(id, function () {
-                    console.log(`${id} has finished downloading.`);
-                    resolve();
-                });
-            }
-        });
-    }).then(function () {
-        on_download_finish(req, res);
-        res.send();
-    }).catch(function (reason) {
-        res.fail(reason);
-    });
-}
-
-/**
- * Blocks until the audio has been loaded on the server.
- *
- * SUBROUTINE for request_blocking_download() method.
- *
- * @param  {String}   id       The ID of the video
- * @param  {Function} callback The function to execute about load completion
- */
-function ping_on_blocking_download(id, callback) {
-    request(`${HEROKU}/alexa/v3/cache/${id}`, function (err, res, body) {
-        if (!err) {
-            let body_json = JSON.parse(body);
-            if (body_json.downloaded) {
-                callback();
-            } else {
-                console.log(`Still downloading. Next ping occurs in ${CACHE_POLLING_INTERVAL} ms.`);
-                setTimeout(ping_on_blocking_download, CACHE_POLLING_INTERVAL, id, callback);
-            }
-        }
-    });
-}
-
-app.pre = function (req, res, type) {
-    if (process.env.ALEXA_APPLICATION_ID != null) {
-        if (req.data.session !== undefined) {
-            if (req.data.session.application.applicationId !== process.env.ALEXA_APPLICATION_ID) {
-                res.fail("Invalid application");
-            }
-        } else {
-            if (req.applicationId !== process.env.ALEXA_APPLICATION_ID) {
-                res.fail("Invalid application");
-            }
-        }
-    }
+    return handlerInput.responseBuilder
+      .speak(message)
+      .reprompt(reprompt)
+      .getResponse();
+  },
 };
 
-app.error = function (exc, req, res) {
-    console.error(exc);
-    res.say("An error occured: " + exc);
+const StartPlaybackHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+
+    if (!playbackInfo.inPlaybackSession) {
+      return (
+        Alexa.getRequestType(handlerInput.requestEnvelope) ===
+          "IntentRequest" &&
+        Alexa.getIntentName(handlerInput.requestEnvelope) === "GetVideoIntent"
+      );
+    }
+    if (
+      Alexa.getRequestType(handlerInput.requestEnvelope) ===
+      "PlaybackController.PlayCommandIssued"
+    ) {
+      return true;
+    }
+
+    if (
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest"
+    ) {
+      return (
+        Alexa.getIntentName(handlerInput.requestEnvelope) === "GetVideoIntent"
+      );
+    }
+  },
+  handle(handlerInput) {
+    console.log("StartPlaybackHandler");
+    const speechText =
+      handlerInput.requestEnvelope.request.intent.slots.videoQuery.value;
+    console.log(speechText);
+    return controller.search(handlerInput, speechText, null);
+  },
 };
 
-app.launch(function (req, res) {
-    console.log("launch called.");
-    res.say(response_messages["LAUNCH_TRIGGERED"]).send();
-});
+const YesIntentHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
 
-app.intent("GetVideoIntent", {
-    "slots": {
-        "VideoQuery": "VIDEOS"
-    },
-    "utterances": [
-        "search for {-|VideoQuery}",
-        "find {-|VideoQuery}",
-        "play {-|VideoQuery}",
-        "start playing {-|VideoQuery}",
-        "put on {-|VideoQuery}"
-    ]
-},
-    function (req, res) {
-    return search_video(req, res, "en-US");
-});
-
-app.intent("AMAZON.YesIntent", function (req, res) {
-    let user_id = req.userId;
-    if (!buffer_search.hasOwnProperty(user_id) || buffer_search[user_id] == null) {
-        res.send();
-    } else if (!INTERACTIVE_WAIT) {
-        return request_blocking_download(req, res);
-    } else {
-        if (downloading_users.has(user_id)) {
-            return wait_on_interactive_download(req, res);
-        } else {
-            return request_interactive_download(buffer_search[user_id].id)
-            .then(url => {
-                downloading_users.add(user_id);
-                last_search[user_id] = url;
-                return wait_on_interactive_download(req, res);
-            })
-            .catch(reason => {
-                return res.fail(reason);
-            });
-        }
-    }
-});
-
-app.intent("AMAZON.NoIntent", function (req, res) {
-    let user_id = req.userId;
-    buffer_search[user_id] = null;
-    res.send();
-});
-
-app.audioPlayer("PlaybackFailed", function (req, res) {
-    console.error("Playback failed.");
-    console.error(req.data.request);
-    console.error(req.data.request.error);
-});
-
-app.audioPlayer("PlaybackNearlyFinished", function (req, res) {
-    let user_id = req.userId;
-    let user_wants_repeat = repeat_infinitely.has(user_id) || repeat_once.has(user_id);
-    if (user_wants_repeat && has_video(user_id)) {
-        let new_token = uuidv4();
-        res.audioPlayerPlayStream("ENQUEUE", {
-            url: last_search[user_id],
-            streamFormat: "AUDIO_MPEG",
-            token: new_token,
-            expectedPreviousToken: last_token[user_id],
-            offsetInMilliseconds: 0
-        });
-        last_token[user_id] = new_token;
-        if (!last_playback.hasOwnProperty(user_id)) {
-            last_playback[user_id] = {};
-        }
-        last_playback[user_id].start = new Date().getTime();
-        repeat_once.delete(user_id);
-        res.send();
-    } else {
-        last_token[user_id] = null;
-    }
-});
-
-app.intent("AMAZON.StartOverIntent", {}, function (req, res) {
-    let user_id = req.userId;
-    if (has_video(user_id)) {
-        restart_video(req, res, 0);
-    } else {
-        res.say(response_messages["NOTHING_TO_REPEAT"]);
-    }
-    res.send();
-});
-
-function stop_intent(req, res) {
-    let user_id = req.userId;
-    if (has_video(user_id)) {
-        if (is_streaming_video(user_id)) {
-            last_token[user_id] = null;
-            res.audioPlayerStop();
-        }
-        last_search[user_id] = null;
-        res.audioPlayerClearQueue();
-    } else {
-        res.say(response_messages["NOTHING_TO_REPEAT"]);
-    }
-    res.send();
+    return (
+      !playbackInfo.inPlaybackSession &&
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+      Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.YesIntent"
+    );
+  },
+  handle(handlerInput) {
+    console.log("YesHandler");
+    return controller.play(handlerInput, "Resuming ");
+  },
 };
 
-app.intent("AMAZON.StopIntent", {}, stop_intent);
-app.intent("AMAZON.CancelIntent", {}, stop_intent);
+const NoIntentHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
 
-app.intent("AMAZON.ResumeIntent", {}, function (req, res) {
-    let user_id = req.userId;
-    if (is_streaming_video(user_id)) {
-        restart_video(req, res, last_playback[user_id].stop - last_playback[user_id].start);
-    } else {
-        res.say(response_messages["NOTHING_TO_RESUME"]);
-    }
-    res.send();
-});
-
-app.intent("AMAZON.PauseIntent", {}, function (req, res) {
-    let user_id = req.userId;
-    if (is_streaming_video(user_id)) {
-        if (!last_playback.hasOwnProperty(user_id)) {
-            last_playback[user_id] = {};
-        }
-        last_playback[user_id].stop = new Date().getTime();
-        res.audioPlayerStop();
-    } else {
-        res.say(response_messages["NOTHING_TO_RESUME"]);
-    }
-    res.send();
-});
-
-app.intent("AMAZON.RepeatIntent", {}, function (req, res) {
-    let user_id = req.userId;
-    if (has_video(user_id) && !is_streaming_video(user_id)) {
-        restart_video(req, res, 0);
-    } else {
-        repeat_once.add(user_id);
-    }
-    res.say(
-        response_messages["REPEAT_TRIGGERED"]
-        .formatUnicorn(has_video(user_id) ? "current" : "next")).send();
-});
-
-
-
-
-
-function next_intent(req, res) {
-	console.log("PlayNext");
-    let user_id = req.userId;
-    if (has_video(user_id)) {
-        if (is_streaming_video(user_id)) {
-            last_token[user_id] = null;
-            res.audioPlayerStop();
-        }
-        last_search[user_id] = null;
-        res.audioPlayerClearQueue();
-    } else {
-        res.say(response_messages["NOTHING_TO_REPEAT"]);
-    }
-    res.send();
+    return (
+      !playbackInfo.inPlaybackSession &&
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+      Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.NoIntent"
+    );
+  },
+  async handle(handlerInput) {
+    console.log("NoHandler");
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+    playbackInfo.offsetInMilliseconds = 0;
+    return controller.play(handlerInput, "Starting Over ");
+  },
 };
 
-app.intent("AMAZON.NextIntent", {}, function (req, res) {
-    let user_id = req.userId;
-    if (has_video(user_id)) {
-        next_intent(req, res);
+const ResumePlaybackIntentHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+
+    return (
+      playbackInfo.inPlaybackSession &&
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+      (Alexa.getIntentName(handlerInput.requestEnvelope) ===
+        "AMAZON.PlayIntent" ||
+        Alexa.getIntentName(handlerInput.requestEnvelope) ===
+          "AMAZON.ResumeIntent")
+    );
+  },
+  handle(handlerInput) {
+    return controller.play(handlerInput, "Resuming ");
+  },
+};
+
+const StartOverIntentHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+
+    return (
+      playbackInfo.inPlaybackSession &&
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+      Alexa.getIntentName(handlerInput.requestEnvelope) ===
+        "AMAZON.StartOverIntent"
+    );
+  },
+  handle(handlerInput) {
+    console.log("StartOverHandler");
+    playbackInfo.offsetInMilliseconds = 0;
+    return controller.play(handlerInput, "Starting Over ");
+  },
+};
+
+const NextPlaybackIntentHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+
+    return (
+      playbackInfo.inPlaybackSession &&
+      (Alexa.getRequestType(handlerInput.requestEnvelope) ===
+        "PlaybackController.NextCommandIssued" ||
+        (Alexa.getRequestType(handlerInput.requestEnvelope) ===
+          "IntentRequest" &&
+          Alexa.getIntentName(handlerInput.requestEnvelope) ===
+            "AMAZON.NextIntent"))
+    );
+  },
+  handle(handlerInput) {
+    console.log("NextPlaybackHandler");
+    return controller.playNext(handlerInput);
+  },
+};
+
+const PreviousPlaybackIntentHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+
+    return (
+      playbackInfo.inPlaybackSession &&
+      (Alexa.getRequestType(handlerInput.requestEnvelope) ===
+        "PlaybackController.PreviousCommandIssued" ||
+        (Alexa.getRequestType(handlerInput.requestEnvelope) ===
+          "IntentRequest" &&
+          Alexa.getIntentName(handlerInput.requestEnvelope) ===
+            "AMAZON.PreviousIntent"))
+    );
+  },
+  handle(handlerInput) {
+    console.log("PreviousPlaybackHandler");
+    return controller.playPrevious(handlerInput);
+  },
+};
+
+const HelpIntentHandler = {
+  canHandle(handlerInput) {
+    return (
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+      Alexa.getIntentName(handlerInput.requestEnvelope) === "AMAZON.HelpIntent"
+    );
+  },
+  handle(handlerInput) {
+    const speakOutput =
+      "Welcome to Multi Tube. You can say, play your favourite artist name, to begin.";
+
+    return handlerInput.responseBuilder
+      .speak(speakOutput)
+      .reprompt(speakOutput)
+      .getResponse();
+  },
+};
+const PauseAndStopIntentHandler = {
+  canHandle(handlerInput) {
+    
+    return (
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+      (Alexa.getIntentName(handlerInput.requestEnvelope) ===
+        "AMAZON.CancelIntent" ||
+        Alexa.getIntentName(handlerInput.requestEnvelope) ===
+          "AMAZON.StopIntent" ||
+        Alexa.getIntentName(handlerInput.requestEnvelope) ===
+          "AMAZON.PauseIntent")
+    );
+  },
+  handle(handlerInput) {
+    console.log("PauseAndStopIntentHandler");
+    return controller.stop(handlerInput, "Pausing ");
+  },
+};
+
+const LoopOnIntentHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+
+    return (
+      playbackInfo.inPlaybackSession &&
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+      Alexa.getIntentName(handlerInput.requestEnvelope) ===
+        "AMAZON.LoopOnIntent"
+    );
+  },
+  async handle(handlerInput) {
+    const playbackSetting = await getPlaybackSetting(handlerInput);
+    playbackSetting.loop = true;
+
+    return handlerInput.responseBuilder.speak("Loop turned on").getResponse();
+  },
+};
+
+const LoopOffIntentHandler = {
+  async canHandle(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+
+    return (
+      playbackInfo.inPlaybackSession &&
+      Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+      Alexa.getIntentName(handlerInput.requestEnvelope) ===
+        "AMAZON.LoopOffIntent"
+    );
+  },
+  async handle(handlerInput) {
+    const playbackSetting = await getPlaybackSetting(handlerInput);
+    playbackSetting.loop = false;
+
+    return handlerInput.responseBuilder.speak("Loop turned off").getResponse();
+  },
+};
+
+/**
+ * Handle Audio Player Events
+ */
+const AudioPlayerEventHandler = {
+  canHandle(handlerInput) {
+    return handlerInput.requestEnvelope.request.type.startsWith("AudioPlayer.");
+  },
+  async handle(handlerInput) {
+    const { requestEnvelope, responseBuilder } = handlerInput;
+    const audioPlayerEventName = requestEnvelope.request.type.split(".")[1];
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+
+    console.log("AudioPlayerEventHandler");
+    console.log(audioPlayerEventName);
+    switch (audioPlayerEventName) {
+      case "PlaybackStarted":
+        playbackInfo.token = getToken(handlerInput);
+        playbackInfo.index = await getIndex(handlerInput);
+        playbackInfo.inPlaybackSession = true;
+        playbackInfo.hasPreviousPlaybackSession = true;
+        break;
+      case "PlaybackFinished":
+        playbackInfo.inPlaybackSession = false;
+        playbackInfo.hasPreviousPlaybackSession = false;
+        playbackInfo.nextStreamEnqueued = false;
+        //increase audio index
+        await setNextIndex(playbackInfo);
+        break;
+      case "PlaybackStopped":
+        playbackInfo.token = getToken(handlerInput);
+        playbackInfo.index = await getIndex(handlerInput);
+        playbackInfo.offsetInMilliseconds = getOffsetInMilliseconds(
+          handlerInput
+        );
+        break;
+      case "PlaybackNearlyFinished":
+        {
+          if (playbackInfo.nextStreamEnqueued) {
+            break;
+          }
+          if (playbackInfo.index == constants.config.pageSize - 1) {
+            //Reached the end of the playList, fetch nextPage
+            console.log("End of Playlist, search with nextToken");
+            return controller.search(
+              handlerInput,
+              playbackInfo.query,
+              playbackInfo.nextPageToken
+            );
+          } else {
+            let nextAudio;
+            const playbackSetting = await getPlaybackSetting(handlerInput);
+            if (playbackSetting.loop) {
+              nextAudio = playbackInfo.playOrder[playbackInfo.index];
+            } else {
+              nextAudio = playbackInfo.playOrder[playbackInfo.index + 1];
+            }
+            const audioFormat = await getAudioUrl(nextAudio.id.videoId);
+            const expectedPreviousToken = playbackInfo.token;
+            const offsetInMilliseconds = 0;
+            const playBehavior = "ENQUEUE";
+            playbackInfo.nextStreamEnqueued = true;
+
+            responseBuilder.addAudioPlayerPlayDirective(
+              playBehavior,
+              audioFormat.url,
+              nextAudio.id.videoId,
+              offsetInMilliseconds,
+              expectedPreviousToken
+            );
+          }
+        }
+        break;
+      case "PlaybackFailed":
+        playbackInfo.inPlaybackSession = false;
+        console.log(
+          "Playback Failed : %j",
+          handlerInput.requestEnvelope.request.error
+        );
+        //Skip to the next audio
+        return controller.playNext(handlerInput);
+      default:
+        throw new Error("Should never reach here!");
+    }
+
+    return responseBuilder.getResponse();
+  },
+};
+
+const CheckAudioInterfaceHandler = {
+  async canHandle(handlerInput) {
+    const audioPlayerInterface = (
+      (((handlerInput.requestEnvelope.context || {}).System || {}).device || {})
+        .supportedInterfaces || {}
+    ).AudioPlayer;
+    return audioPlayerInterface === undefined;
+  },
+  handle(handlerInput) {
+    return handlerInput.responseBuilder
+      .speak("Sorry, this skill is not supported on this device")
+      .withShouldEndSession(true)
+      .getResponse();
+  },
+};
+
+const SystemExceptionHandler = {
+  canHandle(handlerInput) {
+    return (
+      handlerInput.requestEnvelope.request.type ===
+      "System.ExceptionEncountered"
+    );
+  },
+  handle(handlerInput) {
+    console.log("SystemExceptionHandler");
+    console.log(JSON.stringify(handlerInput.requestEnvelope, null, 2));
+    console.log(
+      `System exception encountered: ${handlerInput.requestEnvelope.request.reason}`
+    );
+  },
+};
+
+const SessionEndedRequestHandler = {
+  canHandle(handlerInput) {
+    return (
+      Alexa.getRequestType(handlerInput.requestEnvelope) ===
+      "SessionEndedRequest"
+    );
+  },
+  handle(handlerInput) {
+    console.log("SessionEndedRequestHandler");
+    // Any cleanup logic goes here.
+    return handlerInput.responseBuilder.getResponse();
+  },
+};
+
+// Generic error handling to capture any syntax or routing errors. If you receive an error
+// stating the request handler chain is not found, you have not implemented a handler for
+// the intent being invoked or included it in the skill builder below.
+const ErrorHandler = {
+  canHandle() {
+    return true;
+  },
+  handle(handlerInput, error) {
+    console.log("ErrorHandler");
+    console.log(error);
+    console.log(`Error handled: ${error.message}`);
+    const message =
+      "Sorry, this is not a valid command. Please say help to hear what you can say.";
+
+    return handlerInput.responseBuilder
+      .speak(message)
+      .reprompt(message)
+      .getResponse();
+  },
+};
+
+/* HELPER FUNCTIONS */
+
+const controller = {
+  async search(handlerInput, query, nextPageToken) {
+    console.log(query);
+    const data = await searchForVideos(
+      query,
+      nextPageToken,
+      constants.config.pageSize
+    );
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+    playbackInfo.playOrder = data.items;
+    playbackInfo.index = 0;
+    playbackInfo.offsetInMilliseconds = 0;
+    playbackInfo.playbackIndexChanged = true;
+    playbackInfo.query = query;
+    playbackInfo.nextPageToken = data.nextPageToken;
+    return this.play(handlerInput, "Playing ");
+  },
+  async play(handlerInput, message) {
+    console.log("Play");
+    const { attributesManager, responseBuilder } = handlerInput;
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+    const playBehavior = "REPLACE_ALL";
+    const { playOrder, offsetInMilliseconds, index } = playbackInfo;
+    const audioInfo = playOrder[index];
+    const audioFormat = await getAudioUrl(audioInfo.id.videoId);
+    console.log(`${message} ${audioInfo.snippet.title}`);
+    console.log(audioFormat.url);
+    console.log(audioInfo.id.videoId);
+    responseBuilder
+      .speak(`${message} ${audioInfo.snippet.title}`)
+      .withShouldEndSession(true)
+      .addAudioPlayerPlayDirective(
+        playBehavior,
+        audioFormat.url,
+        audioInfo.id.videoId,
+        offsetInMilliseconds,
+        null
+      );
+
+    if (await canThrowCard(handlerInput)) {
+      const cardTitle = `${audioInfo.snippet.title}`;
+      const cardContent = `Playing ${audioInfo.snippet.title}`;
+      responseBuilder.withSimpleCard(cardTitle, cardContent);
+    }
+    console.log("getresponse");
+    return responseBuilder.getResponse();
+  },
+  async stop(handlerInput, message) {
+    return handlerInput.responseBuilder
+      .speak(message)
+      .addAudioPlayerStopDirective()
+      .getResponse();
+  },
+  async playNext(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+    console.log("PlayNext");
+    if (playbackInfo.index == constants.config.pageSize - 1) {
+      //Reached the end of the playList, fetch nextPage
+      return controller.search(
+        handlerInput,
+        playbackInfo.query,
+        playbackInfo.nextPageToken
+      );
     } else {
-        res.say(response_messages["NOTHING_TO_PLAY_NEXT"]);
+      await setNextIndex(playbackInfo);
     }
-    res.send();
-});
-
-
-
-
-
-app.intent("AMAZON.LoopOnIntent", {}, function (req, res) {
-    let user_id = req.userId;
-    repeat_infinitely.add(user_id);
-    if (has_video(user_id) && !is_streaming_video(user_id)) {
-        restart_video(req, res, 0);
+    playbackInfo.offsetInMilliseconds = 0;
+    playbackInfo.playbackIndexChanged = true;
+    return this.play(handlerInput, "Playing Next ");
+  },
+  async playPrevious(handlerInput) {
+    const playbackInfo = await getPlaybackInfo(handlerInput);
+    if (playbackInfo.index === 0) {
+      return handlerInput.responseBuilder
+        .speak("You have reached the start of the playlist")
+        .addAudioPlayerStopDirective()
+        .getResponse();
     }
-    res.say(
-        response_messages["LOOP_ON_TRIGGERED"]
-        .formatUnicorn(has_video(user_id) ? "current" : "next")).send();
-});
+    playbackInfo.index = playbackInfo.index - 1;
+    playbackInfo.offsetInMilliseconds = 0;
+    playbackInfo.playbackIndexChanged = true;
+    return this.play(handlerInput, "Playing Previous ");
+  },
+};
 
-app.intent("AMAZON.LoopOffIntent", {}, function (req, res) {
-    let user_id = req.userId;
-    repeat_infinitely.delete(user_id);
-    res.say(
-        response_messages["LOOP_OFF_TRIGGERED"]
-        .formatUnicorn(has_video(user_id) ? "current" : "next")).send();
-});
+const searchForVideos = async (searchQuery, nextPageToken, amount) => {
+  return await ytlist.searchVideos(searchQuery, nextPageToken, amount);
+}
 
-app.intent("AMAZON.HelpIntent", {}, function (req, res) {
-    res.say(response_messages["HELP_TRIGGERED"]).send();
-});
+const getAudioUrl = async (videoId) => {
+  const audioInfo = await ytdl.getInfo(videoId, {});
+  const audioFormat = await ytdl.chooseFormat(audioInfo.formats, {
+    quality: "140",
+  });
+  return audioFormat;
+};
 
-exports.handler = app.lambda();
+const getPlaybackInfo = async (handlerInput) => {
+  const attributes = await handlerInput.attributesManager.getPersistentAttributes();
+  return attributes.playbackInfo;
+};
+
+const getPlaybackSetting = async (handlerInput) => {
+  const attributes = await handlerInput.attributesManager.getPersistentAttributes();
+  return attributes.playbackSetting;
+};
+
+const getToken = (handlerInput) => {
+  // Extracting token received in the request.
+  return handlerInput.requestEnvelope.request.token;
+};
+
+async function getIndex(handlerInput) {
+  const attributes = await handlerInput.attributesManager.getPersistentAttributes();
+  return attributes.playbackInfo.index;
+}
+
+async function setNextIndex(playbackInfo) {
+  playbackInfo.index = playbackInfo.index + 1;
+}
+
+const getOffsetInMilliseconds = (handlerInput) => {
+  // Extracting offsetInMilliseconds received in the request.
+  return handlerInput.requestEnvelope.request.offsetInMilliseconds;
+};
+
+const canThrowCard = async (handlerInput) => {
+  const playbackInfo = await getPlaybackInfo(handlerInput);
+
+  if (
+    Alexa.getRequestType(handlerInput.requestEnvelope) === "IntentRequest" &&
+    playbackInfo.playbackIndexChanged
+  ) {
+    playbackInfo.playbackIndexChanged = false;
+    return true;
+  }
+  return false;
+};
+
+/* INTERCEPTORS */
+const LoadPersistentAttributesRequestInterceptor = {
+  async process(handlerInput) {
+    const persistentAttributes = await handlerInput.attributesManager.getPersistentAttributes();
+
+    // Check if user is invoking the skill the first time and initialize preset values
+    if (Object.keys(persistentAttributes).length === 0) {
+      handlerInput.attributesManager.setPersistentAttributes({
+        playbackSetting: {
+          loop: false,
+        },
+        playbackInfo: {
+          playOrder: [],
+          index: 0,
+          offsetInMilliseconds: 0,
+          playbackIndexChanged: true,
+          token: "",
+          nextStreamEnqueued: false,
+          inPlaybackSession: false,
+          hasPreviousPlaybackSession: false,
+          query: "",
+          nextPageToken: "",
+        },
+      });
+    }
+  },
+};
+
+const SavePersistentAttributesResponseInterceptor = {
+  async process(handlerInput) {
+    await handlerInput.attributesManager.savePersistentAttributes();
+  },
+};
+
+// The SkillBuilder acts as the entry point for your skill, routing all request and response
+// payloads to the handlers above. Make sure any new handlers or interceptors you've
+// defined are included below. The order matters - they're processed top to bottom.
+exports.handler = Alexa.SkillBuilders.standard()
+  .addRequestHandlers(
+    CheckAudioInterfaceHandler,
+    LaunchRequestHandler,
+    SystemExceptionHandler,
+    StartPlaybackHandler,
+    HelpIntentHandler,
+    StartOverIntentHandler,
+    YesIntentHandler,
+    NoIntentHandler,
+    LoopOnIntentHandler,
+    LoopOffIntentHandler,
+    NextPlaybackIntentHandler,
+    PreviousPlaybackIntentHandler,
+    ResumePlaybackIntentHandler,
+    PauseAndStopIntentHandler,
+    SessionEndedRequestHandler,
+    AudioPlayerEventHandler
+  )
+  .addRequestInterceptors(LoadPersistentAttributesRequestInterceptor)
+  .addResponseInterceptors(SavePersistentAttributesResponseInterceptor)
+  .addErrorHandlers(ErrorHandler)
+  .withAutoCreateTable(true)
+  .withTableName(constants.config.dynamoDBTableName)
+  .lambda();

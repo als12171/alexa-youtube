@@ -12,8 +12,10 @@
     "author": "Amazon Alexa",
     "license": "ISC",
     "dependencies": {
-        "alexa-app": "4.2.3",
-        "request": "2.88.2",
-        "ssml-builder": "0.4.3"
+        "ask-sdk": "^2.10.0",
+        "aws-sdk": "^2.858.0",
+        "axios": "^0.21.1",
+        "yt-list": "0.1.1",
+        "ytdl-core": "^4.5.0"
     }
 }
