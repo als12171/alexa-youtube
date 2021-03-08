@@ -8,6 +8,7 @@ let alexa = require("alexa-app");
 let request = require("request");
 let ssml = require("ssml-builder");
 let response_messages = require("./util/responses.js");
+let app_constants = require("./util/constants.js");
 
 // Create Alexa skill application
 let app = new alexa.app("youtube");
@@ -353,9 +354,9 @@ app.error = function (exc, req, res) {
     res.say("An error occured: " + exc);
 };
 
-app.launch(function (request, response) {
-    response.say(response_messages["LAUNCH_TRIGGERED"]);
-    response.card("You Tube", response_messages["LAUNCH_TRIGGERED"]);
+app.launch(function (req, res) {
+    console.log("launch called.");
+    res.say(response_messages["LAUNCH_TRIGGERED"]).send();
 });
 
 app.intent("GetVideoIntent", {
@@ -496,6 +497,40 @@ app.intent("AMAZON.RepeatIntent", {}, function (req, res) {
         response_messages["REPEAT_TRIGGERED"]
         .formatUnicorn(has_video(user_id) ? "current" : "next")).send();
 });
+
+
+
+
+
+function next_intent(req, res) {
+	console.log("PlayNext");
+    let user_id = req.userId;
+    if (has_video(user_id)) {
+        if (is_streaming_video(user_id)) {
+            last_token[user_id] = null;
+            res.audioPlayerStop();
+        }
+        last_search[user_id] = null;
+        res.audioPlayerClearQueue();
+    } else {
+        res.say(response_messages["NOTHING_TO_REPEAT"]);
+    }
+    res.send();
+};
+
+app.intent("AMAZON.NextIntent", {}, function (req, res) {
+    let user_id = req.userId;
+    if (has_video(user_id)) {
+        next_intent(req, res);
+    } else {
+        res.say(response_messages["NOTHING_TO_PLAY_NEXT"]);
+    }
+    res.send();
+});
+
+
+
+
 
 app.intent("AMAZON.LoopOnIntent", {}, function (req, res) {
     let user_id = req.userId;
