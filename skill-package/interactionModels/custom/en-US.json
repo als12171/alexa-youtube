@@ -1,7 +1,7 @@
 {
     "interactionModel": {
         "languageModel": {
-            "invocationName": "youtube player",
+            "invocationName": "youtube",
             "intents": [{
                     "name": "AMAZON.CancelIntent",
                     "samples": []
