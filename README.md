@@ -10,6 +10,8 @@ After setting this skill up, it's easy to query YouTube for the video of your ch
 This skill performs a search, finding the most relevant video that matches the query. 
 It then streams the video (audio only) to your Alexa device for your enjoyment. :)
 
+This skill was forked from https://github.com/dmhacker/alexa-youtube-skill
+
 ## Additional Information
 
 __Setup:__ The instructions have been moved to this repository's [wiki page](https://github.com/dmhacker/alexa-youtube-skill/wiki).
