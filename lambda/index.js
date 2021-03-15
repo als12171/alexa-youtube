@@ -8,13 +8,12 @@ let alexa = require("alexa-app");
 let request = require("request");
 let ssml = require("ssml-builder");
 let response_messages = require("./util/responses.js");
-let app_constants = require("./util/constants.js");
 
 // Create Alexa skill application
 let app = new alexa.app("youtube");
 
 // Process environment variables
-const HEROKU = process.env.HEROKU_APP_URL || "https://als12171-youtube.herokuapp.com";
+const HEROKU = process.env.HEROKU_APP_URL || "https://dmhacker-youtube.herokuapp.com";
 const INTERACTIVE_WAIT = !(process.env.DISABLE_INTERACTIVE_WAIT === "true" ||
     process.env.DISABLE_INTERACTIVE_WAIT === true ||
     process.env.DISABLE_INTERACTIVE_WAIT === 1);
@@ -23,6 +22,9 @@ const ASK_INTERVAL = Math.max(30000, parseInt(process.env.ASK_INTERVAL || "45000
 
 // Maps user IDs to recently searched video metadata
 let buffer_search = {};
+
+// Maps user IDs to search video results metadata
+let search_results = {};
 
 // Maps user IDs to last played video metadata
 let last_search = {};
@@ -103,14 +105,18 @@ function search_video(req, res, lang) {
     let query = req.slot("VideoQuery");
     console.log(`User ${user_id} entered search query '${query}'.`);
     return new Promise((resolve, reject) => {
-        let search_url = `${HEROKU}/alexa/v3/search/${Buffer.from(query).toString("base64")}`;
-        if (lang === "de-DE") {
-            search_url += "?language=de";
-        } else if (lang === "fr-FR") {
-            search_url += "?language=fr";
-        } else if (lang === "it-IT") {
-            search_url += "?language=it";
-        }
+
+        //let search_url = `${HEROKU}/alexa/v3/search/${Buffer.from(query).toString("base64")}`;
+        let search_url = `${HEROKU}/alexa/v3/searchmany-ytsearch/${query}`;
+
+        //if (lang === "de-DE") {
+        //  search_url += "?language=de";
+        //} else if (lang === "fr-FR") {
+        //  search_url += "?language=fr";
+        //} else if (lang === "it-IT") {
+        //  search_url += "?language=it";
+        //}
+
         request(search_url, function (err, res, body) {
             if (err) {
                 reject(err.message);
@@ -122,10 +128,10 @@ function search_video(req, res, lang) {
                         metadata: null
                     });
                 } else {
-                    let metadata = body_json.video;
-                    console.log(`Search result is '${metadata.title} at ${metadata.link}.`);
+                    let metadata = body_json.videos;
+                    console.log(`Search result is '${metadata[0].title} at ${metadata[0].link}.`);
                     resolve({
-                        message: response_messages["ASK_TO_PLAY"].formatUnicorn(metadata.title),
+                        message: response_messages["ASK_TO_PLAY"].formatUnicorn(metadata[0].title),
                         metadata: metadata
                     });
                 }
@@ -140,9 +146,10 @@ function search_video(req, res, lang) {
             res.card({
                 type: "Simple",
                 title: "Search for \"" + query + "\"",
-                content: "Alexa found \"" + metadata.title + "\" at " + metadata.link + "."
+                content: "Alexa found \"" + metadata[0].title + "\" at " + metadata[0].link + "."
             });
-            buffer_search[user_id] = metadata;
+            buffer_search[user_id] = metadata[0];
+            search_results[user_id] = metadata;
             downloading_users.delete(user_id);
             res.reprompt().shouldEndSession(false);
         }
@@ -375,6 +382,55 @@ app.intent("GetVideoIntent", {
     return search_video(req, res, "en-US");
 });
 
+app.intent("GetVideoGermanIntent", {
+    "slots": {
+        "VideoQuery": "VIDEOS"
+    },
+    "utterances": [
+        "suchen nach {-|VideoQuery}",
+        "finde {-|VideoQuery}",
+        "spielen {-|VideoQuery}",
+        "anfangen zu spielen {-|VideoQuery}",
+        "anziehen {-|VideoQuery}"
+    ]
+},
+    function (req, res) {
+    return search_video(req, res, "de-DE");
+});
+
+app.intent("GetVideoFrenchIntent", {
+    "slots": {
+        "VideoQuery": "VIDEOS"
+    },
+    "utterances": [
+        "recherche {-|VideoQuery}",
+        "cherche {-|VideoQuery}",
+        "joue {-|VideoQuery}",
+        "met {-|VideoQuery}",
+        "lance {-|VideoQuery}",
+        "démarre {-|VideoQuery}"
+    ]
+},
+    function (req, res) {
+    return search_video(req, res, "fr-FR");
+});
+
+app.intent("GetVideoItalianIntent", {
+    "slots": {
+        "VideoQuery": "VIDEOS"
+    },
+    "utterances": [
+        "trova {-|VideoQuery}",
+        "cerca {-|VideoQuery}",
+        "suona {-|VideoQuery}",
+        "incomincia a suonare {-|VideoQuery}",
+        "metti {-|VideoQuery}"
+    ]
+},
+    function (req, res) {
+    return search_video(req, res, "it-IT");
+});
+
 app.intent("AMAZON.YesIntent", function (req, res) {
     let user_id = req.userId;
     if (!buffer_search.hasOwnProperty(user_id) || buffer_search[user_id] == null) {
@@ -410,28 +466,54 @@ app.audioPlayer("PlaybackFailed", function (req, res) {
     console.error(req.data.request.error);
 });
 
+//app.audioPlayer("PlaybackNearlyFinished", function(req, res) {
+//  let user_id = req.userId;
+//  let user_wants_repeat = repeat_infinitely.has(user_id) || repeat_once.has(user_id);
+//  if (user_wants_repeat && has_video(user_id)) {
+//	let new_token = uuidv4();
+//	res.audioPlayerPlayStream("ENQUEUE", {
+//	  url: last_search[user_id],
+//	  streamFormat: "AUDIO_MPEG",
+//	  token: new_token,
+//	  expectedPreviousToken: last_token[user_id],
+//	  offsetInMilliseconds: 0
+//	});
+//	last_token[user_id] = new_token;
+//	if (!last_playback.hasOwnProperty(user_id)) {
+//	  last_playback[user_id] = {};
+//	}
+//	last_playback[user_id].start = new Date().getTime();
+//	repeat_once.delete(user_id);
+//	res.send();
+//  } else {
+//	last_token[user_id] = null;
+//  }
+//});
+
 app.audioPlayer("PlaybackNearlyFinished", function (req, res) {
     let user_id = req.userId;
-    let user_wants_repeat = repeat_infinitely.has(user_id) || repeat_once.has(user_id);
-    if (user_wants_repeat && has_video(user_id)) {
-        let new_token = uuidv4();
-        res.audioPlayerPlayStream("ENQUEUE", {
-            url: last_search[user_id],
-            streamFormat: "AUDIO_MPEG",
-            token: new_token,
-            expectedPreviousToken: last_token[user_id],
-            offsetInMilliseconds: 0
-        });
-        last_token[user_id] = new_token;
-        if (!last_playback.hasOwnProperty(user_id)) {
-            last_playback[user_id] = {};
-        }
-        last_playback[user_id].start = new Date().getTime();
-        repeat_once.delete(user_id);
-        res.send();
-    } else {
-        last_token[user_id] = null;
+
+    let nextVideoUrl = search_results[user_id][0].url;
+    search_results[user_id].shift();
+
+    let new_token = uuidv4();
+    res.audioPlayerPlayStream("ENQUEUE", {
+        url: nextVideoUrl,
+        streamFormat: "AUDIO_MPEG",
+        token: new_token,
+        expectedPreviousToken: last_token[user_id],
+        offsetInMilliseconds: 0
+    });
+
+    last_token[user_id] = new_token;
+
+    if (!last_playback.hasOwnProperty(user_id)) {
+        last_playback[user_id] = {};
     }
+
+    last_playback[user_id].start = new Date().getTime();
+    repeat_once.delete(user_id);
+    res.send();
 });
 
 app.intent("AMAZON.StartOverIntent", {}, function (req, res) {
@@ -497,40 +579,6 @@ app.intent("AMAZON.RepeatIntent", {}, function (req, res) {
         response_messages["REPEAT_TRIGGERED"]
         .formatUnicorn(has_video(user_id) ? "current" : "next")).send();
 });
-
-
-
-
-
-function next_intent(req, res) {
-	console.log("PlayNext");
-    let user_id = req.userId;
-    if (has_video(user_id)) {
-        if (is_streaming_video(user_id)) {
-            last_token[user_id] = null;
-            res.audioPlayerStop();
-        }
-        last_search[user_id] = null;
-        res.audioPlayerClearQueue();
-    } else {
-        res.say(response_messages["NOTHING_TO_REPEAT"]);
-    }
-    res.send();
-};
-
-app.intent("AMAZON.NextIntent", {}, function (req, res) {
-    let user_id = req.userId;
-    if (has_video(user_id)) {
-        next_intent(req, res);
-    } else {
-        res.say(response_messages["NOTHING_TO_PLAY_NEXT"]);
-    }
-    res.send();
-});
-
-
-
-
 
 app.intent("AMAZON.LoopOnIntent", {}, function (req, res) {
     let user_id = req.userId;
