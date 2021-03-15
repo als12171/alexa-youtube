@@ -1,73 +1,185 @@
 {
     "interactionModel": {
         "languageModel": {
-            "invocationName": "youtube",
-            "intents": [{
+            "invocationName": "youtube playback",
+            "intents": [
+                {
                     "name": "AMAZON.CancelIntent",
                     "samples": []
-                }, {
+                },
+                {
                     "name": "AMAZON.HelpIntent",
                     "samples": []
-                }, {
+                },
+                {
+                    "name": "AMAZON.LoopOffIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.LoopOnIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.PauseIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.RepeatIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.ResumeIntent",
+                    "samples": []
+                },
+                {
                     "name": "AMAZON.StopIntent",
                     "samples": []
-                }, {
+                },
+                {
+                    "name": "AMAZON.YesIntent",
+                    "samples": []
+                },
+                {
+                    "name": "AMAZON.NoIntent",
+                    "samples": []
+                },
+                {
                     "name": "GetVideoIntent",
-                    "slots": [{
-                            "name": "videoQuery",
+                    "slots": [
+                        {
+                            "name": "VideoQuery",
                             "type": "VIDEOS"
                         }
                     ],
                     "samples": [
-                        "search for {videoQuery}",
-                        "find {videoQuery}",
-                        "play {videoQuery}",
-                        "start playing {videoQuery}",
-                        "put on {videoQuery}"
+                        "search for {VideoQuery}",
+                        "find {VideoQuery}",
+                        "play {VideoQuery}",
+                        "start playing {VideoQuery}",
+                        "put on {VideoQuery}"
                     ]
-                }, {
-                    "name": "AMAZON.PauseIntent",
-                    "slots": [],
+                },
+                {
+                    "name": "AMAZON.NavigateHomeIntent",
                     "samples": []
-                }, {
-                    "name": "AMAZON.ResumeIntent",
-                    "slots": [],
-                    "samples": []
-                }, {
-                    "name": "AMAZON.LoopOnIntent",
-                    "slots": [],
-                    "samples": []
-                }, {
-                    "name": "AMAZON.LoopOffIntent",
-                    "slots": [],
-                    "samples": []
-                }, {
-                    "name": "AMAZON.PreviousIntent",
-                    "slots": [],
-                    "samples": []
-                }, {
-                    "name": "AMAZON.StartOverIntent",
-                    "slots": [],
-                    "samples": []
-                }, {
-                    "name": "AMAZON.YesIntent",
-                    "slots": [],
-                    "samples": []
-                }, {
-                    "name": "AMAZON.NoIntent",
-                    "slots": [],
-                    "samples": []
-                }, {
-                    "name": "AMAZON.NextIntent",
-                    "slots": [],
+                },
+                {
+                    "name": "AMAZON.FallbackIntent",
                     "samples": []
                 }
             ],
-            "types": [{
+            "types": [
+                {
                     "name": "VIDEOS",
-                    "values": [{
+                    "values": [
+                        {
+                            "name": {
+                                "value": "prince"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "the fray"
+                            }
+                        },
+                        {
                             "name": {
                                 "value": "the rolling stones"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "toad the wet sproket"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "KC and the sunshine band"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "john travolta and olivia newton john"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "DJ jazzy jeff and the fresh prince"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "lola"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "hello dolly"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "love me tender"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "fools gold"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "roberta flack killing me softly with his song"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "stevie wonder superstition"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "boston"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "full circle"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "dubstar"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "underworld"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "orbital"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "let me be your fantasy"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "pop will eat itself"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "ultra nate"
+                            }
+                        },
+                        {
+                            "name": {
+                                "value": "4 hours Peaceful and Relaxing Instrumental Music"
                             }
                         }
                     ]
