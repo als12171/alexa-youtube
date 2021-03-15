@@ -1,9 +1,9 @@
 /* CONSTANTS */
 
 let constants = {
-    appId: "amzn1.ask.skill.92cd191e-60c2-44e1-902c-8926b2262565",
-    dynamoDBTableName: "alexa-skill-multitube-playback",
-    pageSize: 10,
+    appId: "amzn1.ask.skill.6ce7639f-17af-4ee7-9798-f50c3768465f",
+    //dynamoDBTableName: "alexa-skill-multitube-playback",
+    pageSize: 20,
 
     // environment variables
     herokuApp: process.env.HEROKU_APP_URL || "https://als12171-youtube.herokuapp.com",

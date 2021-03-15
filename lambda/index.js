@@ -8,17 +8,16 @@ let alexa = require("alexa-app");
 let request = require("request");
 let ssml = require("ssml-builder");
 let response_messages = require("./util/responses.js");
+let app_constants = require("./util/constants.js");
 
 // Create Alexa skill application
 let app = new alexa.app("youtube");
 
 // Process environment variables
-const HEROKU = process.env.HEROKU_APP_URL || "https://dmhacker-youtube.herokuapp.com";
-const INTERACTIVE_WAIT = !(process.env.DISABLE_INTERACTIVE_WAIT === "true" ||
-    process.env.DISABLE_INTERACTIVE_WAIT === true ||
-    process.env.DISABLE_INTERACTIVE_WAIT === 1);
-const CACHE_POLLING_INTERVAL = Math.max(1000, parseInt(process.env.CACHE_POLLING_INTERVAL || "5000", 10));
-const ASK_INTERVAL = Math.max(30000, parseInt(process.env.ASK_INTERVAL || "45000", 10));
+//const HEROKU = process.env.HEROKU_APP_URL || "https://dmhacker-youtube.herokuapp.com";
+//const INTERACTIVE_WAIT = !(process.env.DISABLE_INTERACTIVE_WAIT === "true" || process.env.DISABLE_INTERACTIVE_WAIT === true || process.env.DISABLE_INTERACTIVE_WAIT === 1);
+//const CACHE_POLLING_INTERVAL = Math.max(1000, parseInt(process.env.CACHE_POLLING_INTERVAL || "5000", 10));
+//const ASK_INTERVAL = Math.max(30000, parseInt(process.env.ASK_INTERVAL || "45000", 10));
 
 // Maps user IDs to recently searched video metadata
 let buffer_search = {};
@@ -106,16 +105,8 @@ function search_video(req, res, lang) {
     console.log(`User ${user_id} entered search query '${query}'.`);
     return new Promise((resolve, reject) => {
 
-        //let search_url = `${HEROKU}/alexa/v3/search/${Buffer.from(query).toString("base64")}`;
-        let search_url = `${HEROKU}/alexa/v3/searchmany-ytsearch/${query}`;
-
-        //if (lang === "de-DE") {
-        //  search_url += "?language=de";
-        //} else if (lang === "fr-FR") {
-        //  search_url += "?language=fr";
-        //} else if (lang === "it-IT") {
-        //  search_url += "?language=it";
-        //}
+        //let search_url = `${app_constants.herokuApp}/alexa/v3/search/${Buffer.from(query).toString("base64")}`;
+        let search_url = `${app_constants.herokuApp}/alexa/v3/searchmany-ytsearch/${query}`;
 
         request(search_url, function (err, res, body) {
             if (err) {
@@ -186,13 +177,13 @@ function on_download_finish(req, res) {
  */
 function request_interactive_download(id) {
     return new Promise((resolve, reject) => {
-        request(`${HEROKU}/alexa/v3/download/${id}`, function (err, res, body) {
+        request(`${app_constants.herokuApp}/alexa/v3/download/${id}`, function (err, res, body) {
             if (err) {
                 console.error(err.message);
                 reject(err.message);
             } else {
                 let body_json = JSON.parse(body);
-                let url = HEROKU + body_json.link;
+                let url = app_constants.herokuApp + body_json.link;
                 console.log(`${url} has started downloading.`);
                 resolve(url);
             }
@@ -212,7 +203,7 @@ function request_interactive_download(id) {
  */
 function wait_on_interactive_download(req, res) {
     let user_id = req.userId;
-    return ping_on_interactive_download(req, buffer_search[user_id].id, ASK_INTERVAL).then(() => {
+    return ping_on_interactive_download(req, buffer_search[user_id].id, app_constants.askInterval).then(() => {
         if (downloading_users.has(user_id)) {
             let message = response_messages["ASK_TO_CONTINUE"];
             let speech = new ssml();
@@ -244,7 +235,7 @@ function wait_on_interactive_download(req, res) {
 function ping_on_interactive_download(req, id, timeout) {
     let user_id = req.userId;
     return new Promise((resolve, reject) => {
-        request(`${HEROKU}/alexa/v3/cache/${id}`, function (err, res, body) {
+        request(`${app_constants.herokuApp}/alexa/v3/cache/${id}`, function (err, res, body) {
             if (!err) {
                 let body_json = JSON.parse(body);
                 if (body_json.hasOwnProperty('downloaded') && body_json['downloaded'] != null) {
@@ -258,12 +249,12 @@ function ping_on_interactive_download(req, id, timeout) {
                             resolve();
                             return;
                         }
-                        let interval = Math.min(CACHE_POLLING_INTERVAL, timeout);
+                        let interval = Math.min(app_constants.cachePollingInterval, timeout);
                         console.log(`Still downloading. Next ping occurs in ${interval} ms.`);
                         console.log(`User will be prompted in ${timeout} ms.`);
                         resolve(new Promise((_resolve, _reject) => {
                                 setTimeout(() => {
-                                    _resolve(ping_on_interactive_download(req, id, timeout - CACHE_POLLING_INTERVAL)
+                                    _resolve(ping_on_interactive_download(req, id, timeout - app_constants.cachePollingInterval)
                                         .catch(_reject));
                                 }, interval);
                             }).catch(reject));
@@ -294,12 +285,12 @@ function request_blocking_download(req, res) {
     let id = buffer_search[user_id].id;
     console.log(`${id} was requested for download.`);
     return new Promise((resolve, reject) => {
-        request(`${HEROKU}/alexa/v3/download/${id}`, function (err, res, body) {
+        request(`${app_constants.herokuApp}/alexa/v3/download/${id}`, function (err, res, body) {
             if (err) {
                 reject(err.message);
             } else {
                 let body_json = JSON.parse(body);
-                last_search[user_id] = HEROKU + body_json.link;
+                last_search[user_id] = app_constants.herokuApp + body_json.link;
 
                 // NOTE: hack to get Alexa to ignore a bad PlaybackNearlyFinished event
                 repeat_once.add(user_id);
@@ -329,14 +320,14 @@ function request_blocking_download(req, res) {
  * @param  {Function} callback The function to execute about load completion
  */
 function ping_on_blocking_download(id, callback) {
-    request(`${HEROKU}/alexa/v3/cache/${id}`, function (err, res, body) {
+    request(`${app_constants.herokuApp}/alexa/v3/cache/${id}`, function (err, res, body) {
         if (!err) {
             let body_json = JSON.parse(body);
             if (body_json.downloaded) {
                 callback();
             } else {
-                console.log(`Still downloading. Next ping occurs in ${CACHE_POLLING_INTERVAL} ms.`);
-                setTimeout(ping_on_blocking_download, CACHE_POLLING_INTERVAL, id, callback);
+                console.log(`Still downloading. Next ping occurs in ${app_constants.cachePollingInterval} ms.`);
+                setTimeout(ping_on_blocking_download, app_constants.cachePollingInterval, id, callback);
             }
         }
     });
@@ -435,7 +426,7 @@ app.intent("AMAZON.YesIntent", function (req, res) {
     let user_id = req.userId;
     if (!buffer_search.hasOwnProperty(user_id) || buffer_search[user_id] == null) {
         res.send();
-    } else if (!INTERACTIVE_WAIT) {
+    } else if (!app_constants.interactiveWait) {
         return request_blocking_download(req, res);
     } else {
         if (downloading_users.has(user_id)) {
