@@ -9,15 +9,10 @@ let request = require("request");
 let ssml = require("ssml-builder");
 let response_messages = require("./util/responses.js");
 let app_constants = require("./util/constants.js");
+let remote_logger = require("./util/remoteLogger.js");
 
 // Create Alexa skill application
 let app = new alexa.app("youtube");
-
-// Process environment variables
-//const HEROKU = process.env.HEROKU_APP_URL || "https://dmhacker-youtube.herokuapp.com";
-//const INTERACTIVE_WAIT = !(process.env.DISABLE_INTERACTIVE_WAIT === "true" || process.env.DISABLE_INTERACTIVE_WAIT === true || process.env.DISABLE_INTERACTIVE_WAIT === 1);
-//const CACHE_POLLING_INTERVAL = Math.max(1000, parseInt(process.env.CACHE_POLLING_INTERVAL || "5000", 10));
-//const ASK_INTERVAL = Math.max(30000, parseInt(process.env.ASK_INTERVAL || "45000", 10));
 
 // Maps user IDs to recently searched video metadata
 let buffer_search = {};
@@ -104,9 +99,7 @@ function search_video(req, res, lang) {
     let query = req.slot("VideoQuery");
     console.log(`User ${user_id} entered search query '${query}'.`);
     return new Promise((resolve, reject) => {
-
-        //let search_url = `${app_constants.herokuApp}/alexa/v3/search/${Buffer.from(query).toString("base64")}`;
-        let search_url = `${app_constants.herokuApp}/alexa/v3/searchmany-ytsearch/${query}`;
+        let search_url = `${app_constants.herokuApp}/alexa/v3/searchmany-ytsearch/${query}/${app_constants.pageSize}`;
 
         request(search_url, function (err, res, body) {
             if (err) {
@@ -141,6 +134,8 @@ function search_video(req, res, lang) {
             });
             buffer_search[user_id] = metadata[0];
             search_results[user_id] = metadata;
+            remote_logger.logDebug("video: " + JSON.stringify(metadata[0]));
+            remote_logger.logDebug("search results count: " + metadata.length);
             downloading_users.delete(user_id);
             res.reprompt().shouldEndSession(false);
         }
@@ -354,6 +349,7 @@ app.error = function (exc, req, res) {
 
 app.launch(function (req, res) {
     console.log("launch called.");
+    remote_logger.logDebug("launch called.");
     res.say(response_messages["LAUNCH_TRIGGERED"]).send();
 });
 
@@ -482,10 +478,12 @@ app.audioPlayer("PlaybackFailed", function (req, res) {
 //});
 
 app.audioPlayer("PlaybackNearlyFinished", function (req, res) {
-    let user_id = req.userId;
+    remote_logger.logInfo("PlaybackNearlyFinished called.");
+	let user_id = req.userId;
 
     let nextVideoUrl = search_results[user_id][0].url;
     search_results[user_id].shift();
+    remote_logger.logInfo("PlaybackNearlyFinished - nextVideoUrl: " + JSON.stringify(nextVideoUrl));
 
     let new_token = uuidv4();
     res.audioPlayerPlayStream("ENQUEUE", {
